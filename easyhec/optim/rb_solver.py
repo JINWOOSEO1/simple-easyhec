@@ -6,10 +6,21 @@ import numpy as np
 import torch
 import torch.nn as nn
 import trimesh
+import torchvision.transforms.functional as F
 
 from easyhec.optim.nvdiffrast_renderer import NVDiffrastRenderer
 from easyhec.utils import utils_3d
+from scipy.ndimage import distance_transform_edt
 
+def compute_distance_transform(mask_ref):
+    mask_np = mask_ref.detach().cpu().numpy()
+    dist_map = distance_transform_edt(1 - mask_np)
+    
+    return torch.from_numpy(dist_map).float()
+
+def chamfer_mask_loss(mask_rendered, dist_map_ref):
+    loss = torch.mean(mask_rendered * dist_map_ref)
+    return loss
 
 @dataclass
 class RBSolverConfig:
@@ -65,9 +76,13 @@ class RBSolver(nn.Module):
         assert link_poses.shape[1:] == (self.nlinks, 4, 4)
         assert masks_ref.shape[1:] == (self.H, self.W)
 
+        
         batch_size = masks_ref.shape[0]
+        # masks_ref = F.gaussian_blur(masks_ref.unsqueeze(1).float(), kernel_size=31, sigma=5).squeeze(1)
+        # dist_map_ref = compute_distance_transform(masks_ref[0]).to('cuda').float()
         for bid in range(batch_size):
             all_link_si = []
+            
             for link_idx in range(self.nlinks):
                 if mount_poses is not None:
                     Tc_c2l = Tc_c2b @ mount_poses[bid] @ link_poses[bid, link_idx]
@@ -84,7 +99,12 @@ class RBSolver(nn.Module):
                 all_link_si = torch.stack(all_link_si)
             all_link_si = all_link_si.sum(0).clamp(max=1)
             all_frame_all_link_si.append(all_link_si)
-            loss = torch.sum((all_link_si - masks_ref[bid].float()) ** 2)
+            # loss = torch.sum((all_link_si - masks_ref[bid].float()) ** 2)
+            gt_0_mask = (masks_ref[bid] == 0)
+            gt_1_mask = (masks_ref[bid] != 0)
+            loss_0 = torch.sum((all_link_si[gt_0_mask] - masks_ref[bid].float()[gt_0_mask]) ** 2)
+            loss_1 = torch.sum((all_link_si[gt_1_mask] - masks_ref[bid].float()[gt_1_mask]) ** 2)
+            loss = loss_0 + 2 * loss_1
             losses.append(loss)
         loss = torch.stack(losses).mean()
         all_frame_all_link_si = torch.stack(all_frame_all_link_si)

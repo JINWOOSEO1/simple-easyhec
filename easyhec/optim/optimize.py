@@ -94,7 +94,7 @@ def optimize(
         if i - last_loss_improvement_step >= early_stopping_steps:
             break
         if verbose:
-            pbar.set_description(f"Loss: {loss_value:.2f}, Best Loss: {best_loss:.2f}")
+            pbar.set_description(f"Loss: {loss_value:.4f}, Best Loss: {best_loss:.4f}")
         if "metrics" in output:
             pbar.set_postfix(output["metrics"])
     if return_history:

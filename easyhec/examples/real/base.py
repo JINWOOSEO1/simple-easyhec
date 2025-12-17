@@ -16,9 +16,9 @@ class Args:
     seed: int = 0
 
     ### sam2 segmentation related configs ###
-    model_cfg: str = "sam2/configs/sam2.1/sam2.1_hiera_l.yaml"
+    model_cfg: str = "configs/sam2.1/sam2.1_hiera_l.yaml"
     """the model config for sam2"""
-    checkpoint: str = "sam2/checkpoints/sam2.1_hiera_large.pt"
+    checkpoint: str = "easyhec/sam2/checkpoints/sam2.1_hiera_large.pt"
     """the checkpoint for sam2"""
 
     output_dir: str = "results"

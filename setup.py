@@ -15,12 +15,10 @@ setup(
         "tyro",
         "torch",
         "tqdm",
-        "opencv-python",
         "trimesh",
         "transforms3d",
         "matplotlib",
         "urchin",
-        "opencv-python",
         # ninja is used by nvdiffrast
         "ninja>=1.11",
     ],

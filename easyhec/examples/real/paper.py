@@ -3,26 +3,27 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pyrealsense2 as rs
 import torch
 import trimesh
 import tyro
 from transforms3d.euler import euler2mat
+import rospy
 
 from easyhec.examples.real.base import Args
 from easyhec.optim.optimize import optimize
 from easyhec.segmentation.interactive import InteractiveSegmentation
 from easyhec.utils import visualization
 from easyhec.utils.camera_conversions import opencv2ros, ros2opencv
+from easyhec.examples.real.data_capture_node import DataCaptureNode
 
 
 @dataclass
 class RealPaperArgs(Args):
     """Calibrate a (realsense) camera with just a piece of standard sized paper. Note that this script might not work with your particular realsense camera, modify as needed.Other cameras can work if you modify the code to get the camera intrinsics and a single color image from the camera."""
     output_dir: str = "results/paper"
-    paper_type: str = "letter"
+    paper_type: str = "a4"
     """The type of paper to use to calibrate against. Options are 'letter' or 'a4'"""
-    realsense_camera_serial_id: str = "none"
+    # realsense_camera_serial_id: str = "none"
     """The serial id of the realsense camera to use for calibration"""
     # TODO (stao): A1, A2, A3, follow a nice structure, we can just generate the meshes for those.
 
@@ -45,56 +46,74 @@ def main(args: RealPaperArgs):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    # Initialize RealSense configuration
-    config = rs.config()
-    pipeline = rs.pipeline()
-    ctx = rs.context()
-    devices = ctx.query_devices()
-    if len(devices) == 0:
-        raise RuntimeError("No RealSense devices found.")
+    # Code for using intel sensor(pyrealsense2)
+    # # Initialize RealSense configuration
+    # config = rs.config()
+    # pipeline = rs.pipeline()
+    # ctx = rs.context()
+    # devices = ctx.query_devices()
+    # if len(devices) == 0:
+    #     raise RuntimeError("No RealSense devices found.")
 
-    # Configure streams
-    camera_width = 1280
-    camera_height = 720
-    if args.realsense_camera_serial_id == "none":
-        print("No realsense camera serial id provided, using the first device found")
-        realsense_camera_serial_id = devices[0].get_info(rs.camera_info.serial_number)
-    else:
-        realsense_camera_serial_id = args.realsense_camera_serial_id
-    print(f"RealSense device id: {realsense_camera_serial_id}")
-    config.enable_device(realsense_camera_serial_id)
-    config.enable_stream(
-        rs.stream.color, camera_width, camera_height, rs.format.bgr8, 30
-    )
-    # Get the color stream profile and its intrinsics
-    profile = pipeline.start(config)
-    color_stream = profile.get_stream(rs.stream.color)
+    # # Configure streams
+    # camera_width = 1280
+    # camera_height = 720
+    # if args.realsense_camera_serial_id == "none":
+    #     print("No realsense camera serial id provided, using the first device found")
+    #     realsense_camera_serial_id = devices[0].get_info(rs.camera_info.serial_number)
+    # else:
+    #     realsense_camera_serial_id = args.realsense_camera_serial_id
+    # print(f"RealSense device id: {realsense_camera_serial_id}")
+    # config.enable_device(realsense_camera_serial_id)
+    # config.enable_stream(
+    #     rs.stream.color, camera_width, camera_height, rs.format.bgr8, 30
+    # )
+    # # Get the color stream profile and its intrinsics
+    # profile = pipeline.start(config)
+    # color_stream = profile.get_stream(rs.stream.color)
 
-    ### Fetch Intrinsics ###
-    color_intrinsics = color_stream.as_video_stream_profile().get_intrinsics()
-    intrinsic = np.array(
-        [
-            [color_intrinsics.fx, 0, color_intrinsics.ppx],
-            [0, color_intrinsics.fy, color_intrinsics.ppy],
-            [0, 0, 1],
-        ],
-        dtype=np.float32,
-    )
+    # ### Fetch Intrinsics ###
+    # color_intrinsics = color_stream.as_video_stream_profile().get_intrinsics()
+    # intrinsic = np.array(
+    #     [
+    #         [color_intrinsics.fx, 0, color_intrinsics.ppx],
+    #         [0, color_intrinsics.fy, color_intrinsics.ppy],
+    #         [0, 0, 1],
+    #     ],
+    #     dtype=np.float32,
+    # )
 
-    ### Fetch one color image ###
-    skip_frames = 60
-    print("Starting camera and warming it up...")
-    for _ in range(skip_frames):
-        frames = pipeline.wait_for_frames()
-        cframe = frames.get_color_frame()
-        if not cframe:
-            print("No frame")
-            continue
-        image = np.asanyarray(cframe.get_data())
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # ### Fetch one color image ###
+    # skip_frames = 60
+    # print("Starting camera and warming it up...")
+    # for _ in range(skip_frames):
+    #     frames = pipeline.wait_for_frames()
+    #     cframe = frames.get_color_frame()
+    #     if not cframe:
+    #         print("No frame")
+    #         continue
+    #     image = np.asanyarray(cframe.get_data())
+    #     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    print(f"Camera Intrinsics:\n {repr(intrinsic)}")
-    images = [image]
+    # print(f"Camera Intrinsics:\n {repr(intrinsic)}")
+    
+    camera_width, camera_height = 1280, 720
+    rospy.init_node("data_capture_node", anonymous=True)
+    capture_node = DataCaptureNode(num_cameras = 1)
+
+    # Camera intrinsic
+    # intrinsic = np.array(
+    #     [
+    #         [fx, 0, ppx],
+    #         [0, fy, ppy],
+    #         [0, 0, 1],
+    #     ],
+    #     dtype=np.float32,
+    # )
+    while capture_node.get_camera_intrinsic(0) is None or capture_node.rgb_images[0] is None:
+        rospy.sleep(0.1)
+    intrinsic = capture_node.get_camera_intrinsic(0).copy()
+    images = [capture_node.rgb_images[0]]
 
     ### Make an initial guess for the extrinsic ###
     # use what we put in sim as the initial guess

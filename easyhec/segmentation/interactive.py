@@ -36,8 +36,8 @@ class InteractiveSegmentation:
 
         self.segmentation_model = segmentation_model
         if self.segmentation_model == "sam2":
-            from sam2.build_sam import build_sam2
-            from sam2.sam2_image_predictor import SAM2ImagePredictor
+            from easyhec.sam2.sam2.build_sam import build_sam2
+            from easyhec.sam2.sam2.sam2_image_predictor import SAM2ImagePredictor
 
             model_cfg = segmentation_model_cfg["model_cfg"]
             checkpoint = segmentation_model_cfg["checkpoint"]
@@ -75,7 +75,6 @@ class InteractiveSegmentation:
         masks = []
         clicked_points = []
         state = "annotation"
-
         def print_help_message():
             print(
                 f"Currently annotating image {current_image_idx+1}/{len(images)}. Click to add a point of what to segment, right click to add a negative point of what not to segment. Press 't' to generate a candidate segmentation mask. Press 'r' to clear the current point annotation. Press 'e' to edit the existing annotation points."
@@ -95,13 +94,14 @@ class InteractiveSegmentation:
         )
         cv2.namedWindow(annotation_window_name, cv2.WINDOW_GUI_NORMAL)
         cv2.setMouseCallback(annotation_window_name, mouse_callback)
-
+        
         print_help_message()
 
         point_size = int(0.01 * (images[0].shape[0] + images[0].shape[1]) / 2)
+        
         while current_image_idx < len(images):
             display_img = images[current_image_idx].copy()
-            image = display_img.copy()
+            image = display_img.copy().astype(np.uint8)
             key = cv2.waitKey(1)
             if state == "annotation":
                 if clicked_points:
@@ -155,6 +155,8 @@ class InteractiveSegmentation:
                     print("(r)esetting the point annotations")
                     clicked_points = []
                     state = "annotation"
+                elif key == ord("q"):
+                    break
             cv2.imshow(
                 annotation_window_name, cv2.cvtColor(display_img, cv2.COLOR_RGB2BGR)
             )
